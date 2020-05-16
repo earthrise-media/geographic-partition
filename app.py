@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import networkx as nx
-import nxmetis
 import altair as alt
 from altair import datum
 import time
@@ -9,6 +8,15 @@ import time
 import streamlit as st
 import json
 from vega_datasets import data
+
+
+import sys
+
+sys.path.insert(0, "/app/.heroku/python/lib/python3.6/site-packages")
+sys.path.insert(0, "/app/.heroku/python/lib/python3.6/site-packages/nxmetis")
+
+import nxmetis
+
 
 st.header("Partitioning geographic space.")
 
