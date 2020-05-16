@@ -1,0 +1,7 @@
+scipy
+streamlit
+numpy
+pandas
+Cython
+networkx
+vega_datasets
