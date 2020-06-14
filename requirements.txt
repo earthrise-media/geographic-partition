@@ -2,6 +2,8 @@ scipy
 streamlit
 numpy
 pandas
-Cython
-networkx
-vega_datasets
+geopandas
+what3words
+shapely
+matplotlib
+scikit-learn

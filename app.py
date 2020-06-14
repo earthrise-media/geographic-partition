@@ -1,197 +1,156 @@
 import pandas as pd
-import numpy as np
-import networkx as nx
-import altair as alt
-from altair import datum
-import time
-
+import matplotlib.pyplot as plt
 import streamlit as st
-import json
-from vega_datasets import data
+import altair as alt
+import numpy as np
+import geopandas
 
+from sklearn.cluster import KMeans
+from shapely.geometry import Polygon, box, mapping
+from shapely.ops import unary_union
 
-import sys
-
-sys.path.insert(0, "/app/.heroku/python/lib/python3.6/site-packages")
-sys.path.insert(0, "/app/.heroku/python/lib/python3.6/site-packages/nxmetis")
-
-import nxmetis
-
-
-st.header("Partitioning geographic space.")
+st.header("Partitioning fields and calculating carbon footprint")
 
 st.markdown("""
 
-The objective of this web visualization is to demonstrate the speed of
-partitioning a geographic region into clusters of size **n**.  Each cluster is
-composed of smaller geographic units that are adjacent to at least one other
-unit in the cluster.  
+We don't know how people will interact with carbon removal through consumer
+applications.  We barely understand the cost to remove carbon through
+regenerative agricultural practices; we have almost no clue how to calculate
+the social value of a tCO2 removed; and the price for consumers has never been
+tested at scale.  Fortunately, testing the consumer price of carbon is
+flexible &mdash; there are a lot of degrees of freedom to bundle carbon
+removal for sale, since sequestration potential varies continuously through
+space and time.
 
+**The objective of this lightweight web app is to identify the size and
+implied price of an SKU for the Hudson Carbon marketplace.**
 
-
-A few issues with this first attempt:
-
-1. We use an [adjacency matrix from the U.S.
-Census](https://www.census.gov/geographies/reference-files/2010/geo/county-adjacency.html)
-and I haven't quite figured out how adjacency is defined exactly.  It's not
-worth the time to figure that out, since this is a dummy example and we will
-use a more regular grid (where adjacency is defined as sharing two vertices). 
-It's clear that "adjacent" counties may only touch in a single point, barely.
-
-2. I haven't figured out a good way to visualize the results.  There is
-probably a really slick way to use the four-color theorem, but again this is
-overkill for this example since we will ultimately just be highlighting one
-cluster at a time in the Hudson Carbon front-end.  This issue does, however,
-make it difficult to view the results in this web visualization.
-
-3. The algorithm will have a remainder.  Sometimes not all of the counties
-will be included in a cluster.  The idea is to limit the number of remaining
-counties.
-
-4. This is a work in progress.  There will be some failures with edge cases. 
-We will deal with that.  But the objective, again, is just to demonstrate
-what's possible.
-
+We have decided to partition the landscape using the [what3words
+grid](https://what3words.com).  There is no _right_ way to geographically
+partition the world, but there is a large developer community around this
+particular partition.  As such, there are potentially useful services for
+back- and front-end development &mdash; including one-line integrations of the
+global grid for mobile applications.
 
 """)
 
-size = st.slider('Size of cluster.', 2, 10, 5)
-
-state_ids = {
-	"Texas":            [48000, 49000],
-	"Virginia":         [51000, 52000],
-	"Florida":          [12000, 13000],
-	"Kansas":           [20000, 21000],
-	"Indiana":          [18000, 19000],
-	"Georgia":          [13000, 14000],
-	"California":       [6000, 7000],
-	"Random assortment":[6000, 30000]
-}
-
-option = st.selectbox(
-	"Select a state or region.",
-	list(state_ids.keys())
+carbon_content = st.sidebar.number_input(
+	'Credited sequestration (tCO2/acre/year)',
+	0.1, 20.0, step=0.1, value=7.7
 )
 
-
-starttime = time.time()
-
-
-id_start, id_end = state_ids[option]
-
-
-counties = alt.topo_feature(data.us_10m.url, 'counties')
-
-df = pd.read_csv(
-	'county_adjacency.tsv', 
-	sep="\t", 
-	usecols=["county_zip", "adjacent_county_zip"]
+carbon_price = st.sidebar.number_input(
+	'Price of carbon ($/tCO2)',
+	5, 200, step=1, value=100
 )
 
-adjdata = df[
-	(df.county_zip > id_start) & 
-	(df.county_zip < id_end) &
-	(df.adjacent_county_zip > id_start) & 
-	(df.adjacent_county_zip < id_end) 
-]
-
-
-
-county_ids = adjdata["county_zip"].unique().tolist()
-number_of_counties = len(county_ids)
-
-am = pd.DataFrame(np.zeros(shape=(number_of_counties, number_of_counties)))
-
-am.index = county_ids
-am.columns = county_ids
-
-# Create edges between county codes as tuples
-edges = [
-	[int(v[0]), int(v[1])] for k, v in adjdata.iterrows() 
-	if v[0] != v[1]
-]
-
-for e in edges:
-	k, v = e
-	am.at[k, v] = 1
-
-graph = nx.from_pandas_adjacency(am)
-
-
-def create_chart(G, N, size=3, id_start=48000, id_end=49000):
-	nparts = int(N / size)
-	partition_results = nxmetis.partition(G, nparts=nparts)
-
-	acceptable_parts = [x for x in partition_results[1] if len(x) == size]
-	dd = pd.DataFrame(dict(id=county_ids, c=-1)).set_index("id")
-
-	i = 0
-	j = 0
-	for cluster in acceptable_parts:
-		
-		for idx in cluster:
-			dd.at[idx, "c"] = i
-			j += 1
-
-		i += 1
-
-	lookup_table = dd.reset_index()
-	lookup_table = lookup_table.astype({'c': int})
-
-	c = alt.Chart(counties).mark_geoshape(
-				stroke='grey', strokeWidth=0.5
-			).encode(
-				color=alt.Color('c:Q', legend=None)
-			).transform_lookup(
-				lookup='id',
-				from_=alt.LookupData(lookup_table, 'id', ['c'])
-			).transform_filter(
-				(datum.id > id_start) & (datum.id < id_end)
-			).project(
-				type='albersUsa'
-			).properties(
-				height=600
-			).configure_view(
-				strokeWidth=0
-		)
-
-	return {
-		"chart": c,
-		"coverage": j
-	}
-
-res = create_chart(
-	graph, 
-	number_of_counties, 
-	size=size, 
-	id_start=id_start, 
-	id_end=id_end
-)
-
-endtime = time.time()
-
+price_per_plot = np.round(carbon_price * carbon_content * 9 / 4046, 2)
 
 st.markdown("""
 
-Each cluster of size *n* = %s is represented on the following map.  The total
-coverage was %s of %s total counties, i.e., %s counties (%s percent) were left out of a
-cluster.  The time to read the GeoJSON from a remote table, create an
-adjacency matrix, and partition the geographic area was **%s seconds**.
+The price per what3words plot is based on the following assumptions:
 
-> Note that it may be hard to see the separate clusters given my shitty
-visualization.  However, it is true that each cluster is of size *n*.
+1. **%s** tCO2 credited per acre, annually [check this]
+2. **$%s** per tCO2
 
-""" % (
-		size,
-		res["coverage"], 
-		number_of_counties,
-		number_of_counties - res["coverage"],
-		int(100 * (number_of_counties - res["coverage"]) / number_of_counties),
-		np.round(endtime-starttime, 3)
+You can play with these assumptions in the sidebar.  The implied price for
+each 3m x 3m plot is **$%s**.
+
+
+When all is said and done, we want a static, canonical GeoJSON file to define
+the geographic partition for each field, like [**this
+one**](https://gist.github.com/danhammer/170f314fd5bdffcda2ff34ee7e400263). 
+This file will define the SKUs forever after.
+
+Consider a relatively small field: `BSF 3` on Sirmon Farm. Use the slider
+below to define the target number of what3words plots per parcel.  The charts
+below show:
+
+1. The total number of parcels available at each price.
+2. The geographic partitioning of the field.
+
+Note that the target number is not always matched.  In order to ensure that
+all area within a field is captured in the marketplace, some parcels will be
+bigger than others.  This is ok.  In fact, it's good design.  It provides
+some marginal variability and therefore consumer choice which has proven to be
+a successful way to capture consumer surplus and move product. The clusters
+are calculated and mapped on the fly, so even for a specific set of
+parameters, the results may be different.  This is why we need a canonical
+partition, once we figure out the appropriate parameters (e.g., price and
+carbon content for each field).  
+
+This toy web app starts up and runs slowly since we are not paying for
+servers.
+
+""" % (np.round(carbon_content, 1), int(carbon_price), price_per_plot))
+
+
+N = st.slider(
+	'Target number of plots per parcel',
+	5, 200, 10
+)
+
+
+
+df = pd.read_pickle("bsf3.pkl")
+size_parcel = N
+geovec = list(zip(df.center_x, df.center_y))
+number_parcels = int(len(geovec)/size_parcel)
+kmeans = KMeans(n_clusters=number_parcels, random_state=0).fit(geovec)
+df["parcel"] = kmeans.labels_
+df["geometry"] = df[["w", "s", "e", "n"]].apply(lambda x: box(*x), axis=1)
+
+agg_df = df[["parcel", "geometry"]].groupby('parcel').agg(unary_union).reset_index()
+
+count_df = df[["id", "parcel"]].groupby("parcel").agg("count").reset_index()
+count_df["price"] = price_per_plot * count_df.id
+
+
+c = alt.Chart(count_df).mark_bar().encode(
+    x=alt.X(
+    	"price:Q", 
+    	bin=True,
+    	axis=alt.Axis(
+    		title="Price per parcel-variant ($)"
+    	)
+    ),
+    y=alt.Y(
+    	'count()',
+    	axis=alt.Axis(
+			title="Number of Parcels"
+		)
 	)
 )
 
-st.altair_chart(
-	res["chart"],
-	use_container_width=True
+st.altair_chart(c, use_container_width=True)
+
+g = geopandas.GeoDataFrame(agg_df, geometry='geometry')
+
+g.boundary.plot(
+	figsize=(8,8)
 )
+plt.box(False)
+plt.axis('off')
+
+st.subheader("Geographic partition of Field `BSF 3`")
+
+st.pyplot()
+
+st.markdown("""
+
+Note that the Stripe transaction fees may be as high as 30 cents.  We are
+talking to the leadership and board of Stripe to make an in-kind contribution
+to Hudson Carbon by waiving these fees as part of their carbon removal
+program.  However, if that does not work, a minimum number of parcels will
+have to be purchased, assuming an extremely small parcel size (e.g., 2 plots
+per parcel).
+
+""")
+
+st.subheader("Calculator")
+
+st.markdown("""
+
+I will add notes about a carbon calculator here &mdash; assumptions, calculations, etc.
+
+""")
