@@ -34,6 +34,12 @@ global grid for mobile applications.
 
 """)
 
+st.sidebar.markdown("""
+**Value of carbon removal**
+
+""")
+
+
 carbon_content = st.sidebar.number_input(
 	'Credited sequestration (tCO2/acre/year)',
 	0.1, 20.0, step=0.1, value=7.7
@@ -125,6 +131,7 @@ c = alt.Chart(count_df).mark_bar().encode(
 st.altair_chart(c, use_container_width=True)
 
 g = geopandas.GeoDataFrame(agg_df, geometry='geometry')
+n_parcels = len(count_df.id)
 
 g.boundary.plot(
 	figsize=(8,8)
@@ -132,7 +139,7 @@ g.boundary.plot(
 plt.box(False)
 plt.axis('off')
 
-st.subheader("Geographic partition of Field `BSF 3`")
+st.subheader("Geographic partition of Field `BSF 3`: %s parcels" % n_parcels)
 
 st.pyplot()
 
@@ -154,3 +161,51 @@ st.markdown("""
 I will add notes about a carbon calculator here &mdash; assumptions, calculations, etc.
 
 """)
+
+
+
+st.sidebar.markdown("""
+
+-----
+**Carbon footprint**
+
+""")
+
+car_mileage = st.sidebar.number_input(
+	'How many miles do you travel by car each day?',
+	0, 200, step=1, value=40
+)
+
+
+flight_number = st.sidebar.number_input(
+	'How many flights do you take each year?',
+	0, 50, step=1, value=10
+)
+
+
+meat_consumption = st.sidebar.number_input(
+	'How many times each week do you eat meat?',
+	0, 20, step=1, value=5
+)
+
+household_num = st.sidebar.number_input(
+	'How many people in your household?',
+	0, 10, step=1, value=4
+) 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
